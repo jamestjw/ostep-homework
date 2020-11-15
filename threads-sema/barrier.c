@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include "common_threads.h"
+#include "my_sephamore.c"
 
 // If done correctly, each child should print their "before" message
 // before either prints their "after" message. Test by adding sleep(1)
@@ -14,6 +15,10 @@
 
 typedef struct __barrier_t {
     // add semaphores and other information here
+    Zem_t mut;
+    Zem_t sem;
+    int num_arrived;
+    int num_threads;
 } barrier_t;
 
 
@@ -22,10 +27,31 @@ barrier_t b;
 
 void barrier_init(barrier_t *b, int num_threads) {
     // initialization code goes here
+
+    // one sephamore to track possibility to proceed
+    Zem_init(&b->sem, 0);
+    // one sephamore to protect update of num of threads that have arrived at barrier
+    Zem_init(&b->mut, 1);
+
+    b->num_threads = num_threads;
+    b->num_arrived = 0;
 }
 
 void barrier(barrier_t *b) {
     // barrier code goes here
+    Zem_wait(&b->mut);
+    b->num_arrived++;
+    Zem_post(&b->mut);
+
+    // the thread that arrives last is responsible of signalling the rest to proceed.
+    if (b->num_arrived == b->num_threads) {
+	    Zem_post(&b->sem);
+    }
+
+    // if we are not last to arrive, just wait for the signal
+    Zem_wait(&b->sem);
+    // now that we are able to proceed, we have to signal other threads to proceed as well
+    Zem_post(&b->sem);
 }
 
 //

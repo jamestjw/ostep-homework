@@ -2,28 +2,56 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "common_threads.h"
-
+#include "my_sephamore.c"
 //
 // Your code goes in the structure and functions below
 //
 
 typedef struct __rwlock_t {
+	int num_readers;
+	// to provide mutex to readers
+	Zem_t mut;
+	// to track num writers
+	Zem_t sem;
 } rwlock_t;
 
 
 void rwlock_init(rwlock_t *rw) {
+	rw->num_readers = 0;
+	// allow one thread to mutate the num_readers at a time
+	Zem_init(&rw->mut, 1);
+	// allow one thread to have write access
+	Zem_init(&rw->sem, 1);
 }
 
 void rwlock_acquire_readlock(rwlock_t *rw) {
+	Zem_wait(&rw->mut);
+	rw->num_readers++;
+	// if we are the first reader, we need to try to get the write lock
+	// so that no one else can write while we are reading!
+	if (rw->num_readers == 1) {
+		Zem_wait(&rw->sem);
+	}
+	Zem_post(&rw->mut);
 }
 
 void rwlock_release_readlock(rwlock_t *rw) {
+	Zem_wait(&rw->mut);
+	rw->num_readers--;
+	// if we are the last thread to finish reading, we need to 
+	// give back control so that the writers can continue writing
+	if (rw->num_readers == 0) {
+		Zem_post(&rw->sem);
+	}
+	Zem_post(&rw->mut);
 }
 
 void rwlock_acquire_writelock(rwlock_t *rw) {
+	Zem_wait(&rw->sem);
 }
 
 void rwlock_release_writelock(rwlock_t *rw) {
+	Zem_post(&rw->sem);
 }
 
 //
@@ -41,6 +69,7 @@ void *reader(void *arg) {
 	rwlock_acquire_readlock(&lock);
 	printf("read %d\n", value);
 	rwlock_release_readlock(&lock);
+// 	sleep(1);
     }
     return NULL;
 }
